@@ -88,7 +88,7 @@ def generate_alerts(df):
 
 
 # --- APP UI ---
-st.title("📊 XGS Health Monitor Dashboard")
+st.title("📊 EmpireOne SC Sophos XGS Health Monitor Dashboard")
 
 uploaded_file = st.file_uploader("Upload your log file (e.g., xgs-healthmond.txt)", type=['txt', 'log'])
 
