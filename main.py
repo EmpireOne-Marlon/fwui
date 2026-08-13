@@ -276,7 +276,7 @@ else:
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #888; font-size: 14px;'>"
-        "🛡️ Developed by <b>San Carlos Network Security Team Lead by Marlon</b>"
+        "🛡️ Developed by <b>San Carlos Network Security Team Lead: Marlon</b>"
         "</div>",
         unsafe_allow_html=True
     )
