@@ -269,3 +269,14 @@ if uploaded_file is not None:
         st.warning("No valid metrics found in the uploaded file. Please check the file format.")
 else:
     st.info("👈 Upload a log file to view the dashboard.")
+
+    # ==========================================
+    # FOOTER
+    # ==========================================
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #888; font-size: 14px;'>"
+        "🛡️ Developed by <b>San Carlos Network Security</b>"
+        "</div>",
+        unsafe_allow_html=True
+    )
