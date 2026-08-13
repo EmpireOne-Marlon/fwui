@@ -3,30 +3,28 @@ import pandas as pd
 import re
 from datetime import datetime
 import io
+import plotly.graph_objects as go
+
 
 # Configure the web page
 st.set_page_config(page_title="XGS Health Monitor", page_icon="📊", layout="wide")
 
 
-# 1. Move file reading and parsing INSIDE the cache to prevent re-reading the 29MB file
 @st.cache_data(show_spinner="Parsing logs...")
 def load_data(uploaded_file):
     stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors='ignore'))
     content = stringio.read()
 
     data = []
-    # Pre-compile regex for maximum speed
     ts_regex = re.compile(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z)')
     metric_regex = re.compile(r'([A-Za-z0-9_]+)\s*:\s*([+-]?[\d.]+)')
 
     for line in content.splitlines():
         line = line.strip()
-        if not line:
-            continue
+        if not line: continue
 
         ts_match = ts_regex.match(line)
-        if not ts_match:
-            continue
+        if not ts_match: continue
 
         timestamp_str = ts_match.group(1)
         try:
@@ -35,34 +33,61 @@ def load_data(uploaded_file):
             continue
 
         rest = line[ts_match.end():].strip()
-
         match = metric_regex.match(rest)
         if match:
-            data.append({
-                'Timestamp': timestamp,
-                'Metric': match.group(1),
-                'Value': float(match.group(2))
-            })
-            continue
-
-        if 'NPU ping successful' in rest:
-            data.append({
-                'Timestamp': timestamp,
-                'Metric': 'NPU_ping',
-                'Value': 1.0
-            })
+            data.append({'Timestamp': timestamp, 'Metric': match.group(1), 'Value': float(match.group(2))})
+        elif 'NPU ping successful' in rest:
+            data.append({'Timestamp': timestamp, 'Metric': 'NPU_ping', 'Value': 1.0})
 
     df = pd.DataFrame(data)
-    if df.empty:
-        return df, df
+    if df.empty: return df, df
 
     df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-    # Pivot and sort
     pivot_df = df.pivot_table(index='Timestamp', columns='Metric', values='Value', aggfunc='last').sort_index()
     return df, pivot_df
 
 
-# App UI
+# --- AUTOMATED ALERT GENERATOR ---
+def generate_alerts(df):
+    alerts = []
+
+    # Define preventive thresholds
+    rules = [
+        ('Host_CPU_Temperature', 70.0, 80.0),
+        ('NPU_CPU_Temperature', 75.0, 85.0),
+        ('NPU_CPU_Usage', 88.0, 95.0),
+        ('Host_Memory_Consumption', 90.0, 95.0),
+        ('NPU_Memory_Consumption', 90.0, 95.0)
+    ]
+
+    for metric, warn_val, crit_val in rules:
+        metric_df = df[df['Metric'] == metric]
+        if metric_df.empty: continue
+
+        crit_hits = metric_df[metric_df['Value'] >= crit_val]
+        for _, row in crit_hits.head(5).iterrows():
+            alerts.append({
+                'Time': row['Timestamp'],
+                'Severity': '🔴 CRITICAL',
+                'Metric': metric,
+                'Value': f"{row['Value']:.1f}",
+                'Message': f"Threshold breached (> {crit_val}). Immediate action required to prevent failure."
+            })
+
+        warn_hits = metric_df[(metric_df['Value'] >= warn_val) & (metric_df['Value'] < crit_val)]
+        for _, row in warn_hits.head(5).iterrows():
+            alerts.append({
+                'Time': row['Timestamp'],
+                'Severity': '🟡 WARNING',
+                'Metric': metric,
+                'Value': f"{row['Value']:.1f}",
+                'Message': f"Elevated levels detected (> {warn_val}). Monitor closely."
+            })
+
+    return pd.DataFrame(alerts).sort_values(by='Time', ascending=False) if alerts else pd.DataFrame()
+
+
+# --- APP UI ---
 st.title("📊 XGS Health Monitor Dashboard")
 
 uploaded_file = st.file_uploader("Upload your log file (e.g., xgs-healthmond.txt)", type=['txt', 'log'])
@@ -73,6 +98,87 @@ if uploaded_file is not None:
     if not df.empty:
         st.success(f"Successfully parsed {len(df)} log entries!")
 
+        # ==========================================
+        # 1. AUTOMATED ALERTS SECTION (GENERATOR)
+        # ==========================================
+        st.markdown("---")
+        st.subheader("🚨 Preventive Alerts & Anomaly Detection")
+        st.caption(
+            "Automated scanner checking for high temperatures, memory spikes, and usage limits to prevent firewall failures.")
+
+        alerts_df = generate_alerts(df)
+
+        if not alerts_df.empty:
+            # Calculate alert counts (These variables are used in the Executive Summary below)
+            crit_count = len(alerts_df[alerts_df['Severity'] == '🔴 CRITICAL'])
+            warn_count = len(alerts_df[alerts_df['Severity'] == '🟡 WARNING'])
+
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Total Alerts", len(alerts_df))
+            col_b.metric("Critical Issues", crit_count)
+            col_c.metric("Warnings", warn_count)
+
+            st.dataframe(
+                alerts_df,
+                use_container_width=True,
+                height=300,
+                column_config={
+                    "Severity": st.column_config.TextColumn("Severity", width="small"),
+                    "Time": st.column_config.DatetimeColumn("Time", format="YYYY-MM-DD HH:mm:ss")
+                }
+            )
+        else:
+            # Define 0 counts if no alerts exist so the Executive Summary doesn't break
+            crit_count = 0
+            warn_count = 0
+            st.success("✅ All systems nominal. No preventive thresholds breached.")
+
+        # ==========================================
+        # 2. EXECUTIVE SUMMARY (PLAIN ENGLISH)
+        # ==========================================
+        st.markdown("---")
+        st.subheader("💼 Executive Summary")
+
+        # Calculate stats for the summary
+        max_host_temp = df[df['Metric'] == 'Host_CPU_Temperature']['Value'].max()
+        max_npu_usage = df[df['Metric'] == 'NPU_CPU_Usage']['Value'].max()
+        max_mem_usage = df[df['Metric'] == 'Host_Memory_Consumption']['Value'].max()
+        total_pings = len(df[df['Metric'] == 'NPU_ping'])
+
+        # Generate dynamic text
+        if crit_count > 0:
+            status_text = f"⚠️ **ATTENTION REQUIRED:** System experienced {crit_count} critical alerts. Peak Host CPU temp reached {max_host_temp:.1f}°C."
+            st.error(status_text)
+        elif warn_count > 0:
+            status_text = f"🟡 **Stable but Elevated:** System is operational but recorded {warn_count} warnings. Peak NPU usage hit {max_npu_usage:.1f}%."
+            st.warning(status_text)
+        else:
+            status_text = f"✅ **All Systems Nominal:** Network is fully operational. Peak Host CPU temp was only {max_host_temp:.1f}°C across {total_pings} health checks."
+            st.success(status_text)
+
+        # ==========================================
+        # 3. KPI METRICS & PEAK CAPACITY
+        # ==========================================
+        st.markdown("---")
+        st.subheader("📊 System Capacity & Uptime")
+
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+        with kpi1:
+            st.metric("System Uptime", f"{total_pings} Checks", delta="100% Success", delta_color="off")
+        with kpi2:
+            st.metric("Peak Host CPU Temp", f"{max_host_temp:.1f} °C")
+        with kpi3:
+            st.metric("Peak NPU Usage", f"{max_npu_usage:.1f} %")
+        with kpi4:
+            st.metric("Peak Memory Usage", f"{max_mem_usage:.1f} %")
+
+        st.caption("Overview of maximum thresholds reached during the entire log period. Useful for capacity planning.")
+
+        # ==========================================
+        # 4. CHARTS & FILTERS
+        # ==========================================
+        st.markdown("---")
         st.sidebar.header("Filter Data")
         all_metrics = pivot_df.columns.tolist()
         default_metrics = [m for m in ['NPU_CPU_Temperature', 'Host_CPU_Temperature', 'Fan_Speed', 'NPU_CPU_Usage'] if
@@ -84,21 +190,67 @@ if uploaded_file is not None:
         with col1:
             st.subheader("📈 Time Series Charts")
             if selected_metrics:
-                # 2. Aggressive downsampling (every 20th row) to prevent browser freeze
-                chart_data = pivot_df[selected_metrics].iloc[::20].reset_index()
-                st.line_chart(chart_data, x='Timestamp', y=selected_metrics)
+                # Downsample data slightly for performance
+                chart_data = pivot_df[selected_metrics].iloc[::10].reset_index()
+
+                # Create strict Plotly Figure
+                fig = go.Figure()
+
+                # Add each metric as a separate trace
+                for metric in selected_metrics:
+                    y_data = chart_data[metric].dropna()
+                    x_data = chart_data.loc[y_data.index, 'Timestamp']
+
+                    # DYNAMIC DUAL Y-AXIS: If values are over 1000, put on right axis
+                    y_axis_ref = 'y1'
+                    if y_data.max() > 1000:
+                        y_axis_ref = 'y2'
+
+                    fig.add_trace(go.Scatter(
+                        x=x_data,
+                        y=y_data,
+                        mode='lines',
+                        name=metric,
+                        yaxis=y_axis_ref,
+                        line=dict(width=2)
+                    ))
+
+                # Configure the dual layout
+                fig.update_layout(
+                    template='plotly_dark',
+                    yaxis1=dict(title="Temp (°C) / Usage (%)", side="left"),
+                    yaxis2=dict(title="Speed (RPM)", side="right", overlaying="y"),
+                    hovermode="x unified",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    margin=dict(l=20, r=20, t=40, b=20)
+                )
+
+                # Render the interactive chart (use_container_width is still standard for plotly)
+                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("👈 Select metrics from the sidebar to view charts.")
 
         with col2:
             st.subheader("📊 Latest Stats")
             if selected_metrics:
-                latest_data = pivot_df[selected_metrics].tail(1).T
-                latest_data.columns = ['Latest Value']
-                st.dataframe(latest_data, width='stretch')
+                latest_values = {}
+                for metric in selected_metrics:
+                    series = pivot_df[metric].dropna()
+                    if not series.empty:
+                        latest_values[metric] = series.iloc[-1]
+
+                if latest_values:
+                    latest_data = pd.DataFrame.from_dict(latest_values, orient='index', columns=['Latest Value'])
+                    # FIX: Replaced use_container_width with width='stretch'
+                    st.dataframe(latest_data, width='stretch')
+                else:
+                    st.info("No data available for selected metrics.")
             else:
                 st.info("Select metrics to view stats.")
 
+        # ==========================================
+        # 5. RAW DATA
+        # ==========================================
         st.markdown("---")
         st.subheader("📋 Raw Data Table")
         st.caption("Showing the latest 500 records for performance.")
@@ -110,7 +262,7 @@ if uploaded_file is not None:
         else:
             display_df = df.sort_values(by='Timestamp', ascending=False)
 
-        # 3. Limit to 500 rows and set a fixed height so the browser doesn't lag
+        # FIX: Replaced use_container_width with width='stretch'
         st.dataframe(display_df.head(500), height=400, width='stretch')
 
     else:
