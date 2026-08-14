@@ -4,10 +4,11 @@ import re
 from datetime import datetime
 import io
 import plotly.graph_objects as go
+import base64
 
 
 # Configure the web page
-st.set_page_config(page_title="XGS Health Monitor", page_icon="📊", layout="wide")
+st.set_page_config(page_title="E1 XGS Health Monitor", page_icon="📊", layout="wide")
 
 
 @st.cache_data(show_spinner="Parsing logs...")
@@ -89,18 +90,31 @@ def generate_alerts(df):
 
 # --- APP UI ---
 # Added gap="small" to reduce horizontal space between the logo and text
-col_logo, col_title = st.columns([1, 10], gap="small")
+# Function to convert the local image to base64 so HTML can read it
+def get_image_base64(image_path):
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except:
+        return None
 
-with col_logo:
-    st.image("logo.png", width=80)
+logo_b64 = get_image_base64("logo.png")
 
-with col_title:
-    # Use HTML markdown instead of st.title to remove the extra vertical space
+if logo_b64:
+    # Use HTML Flexbox to put the logo and title exactly side-by-side
     st.markdown(
-        "<h1 style='margin-top: 15px; margin-bottom: 0px;'>EmpireOne FW Health Monitor Dashboard</h1>",
+        f"""
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <img src="data:image/png;base64,{logo_b64}" style="width: 80px; margin-right: 15px; border-radius: 8px;">
+            <h1 style="margin: 0; font-size: 2.2rem; color: #FFFFFF;">EmpireOne SC Sophos XGS Health Monitor Dashboard</h1>
+        </div>
+        <hr style="border: 1px solid #333; margin-top: 0; margin-bottom: 30px;">
+        """,
         unsafe_allow_html=True
     )
-
+else:
+    # Fallback just in case the image file is missing
+    st.title("EmpireOne SC Sophos XGS Health Monitor Dashboard")
 st.markdown("---")  # Adds a clean line separating the header from the alerts
 
 uploaded_file = st.file_uploader("Upload your log file (e.g., xgs-healthmond.txt)", type=['txt', 'log'])
