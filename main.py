@@ -97,7 +97,7 @@ with col_logo:
 with col_title:
     # Use HTML markdown instead of st.title to remove the extra vertical space
     st.markdown(
-        "<h1 style='margin-top: 15px; margin-bottom: 0px;'>EmpireOne SC Sophos XGS Health Monitor Dashboard</h1>",
+        "<h1 style='margin-top: 15px; margin-bottom: 0px;'>E1 SC Sophos XGS Health Monitor Dashboard</h1>",
         unsafe_allow_html=True
     )
 
