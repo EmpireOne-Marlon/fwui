@@ -88,15 +88,18 @@ def generate_alerts(df):
 
 
 # --- APP UI ---
-# Create a layout with a small column for the logo, and a large one for the title
-col_logo, col_title = st.columns([1, 8])
+# Added gap="small" to reduce horizontal space between the logo and text
+col_logo, col_title = st.columns([1, 10], gap="small")
 
 with col_logo:
-    # Make sure the filename matches exactly what you uploaded to GitHub
     st.image("logo.png", width=80)
 
 with col_title:
-    st.title("EmpireOne SC Sophos XGS Health Monitor Dashboard")
+    # Use HTML markdown instead of st.title to remove the extra vertical space
+    st.markdown(
+        "<h1 style='margin-top: 15px; margin-bottom: 0px;'>EmpireOne SC Sophos XGS Health Monitor Dashboard</h1>",
+        unsafe_allow_html=True
+    )
 
 st.markdown("---")  # Adds a clean line separating the header from the alerts
 
