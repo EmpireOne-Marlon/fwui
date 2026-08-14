@@ -88,7 +88,17 @@ def generate_alerts(df):
 
 
 # --- APP UI ---
-st.title("📊 EmpireOne SC Sophos XGS Health Monitor Dashboard")
+# Create a layout with a small column for the logo, and a large one for the title
+col_logo, col_title = st.columns([1, 8])
+
+with col_logo:
+    # Make sure the filename matches exactly what you uploaded to GitHub
+    st.image("logo.png", width=80)
+
+with col_title:
+    st.title("EmpireOne SC Sophos XGS Health Monitor Dashboard")
+
+st.markdown("---")  # Adds a clean line separating the header from the alerts
 
 uploaded_file = st.file_uploader("Upload your log file (e.g., xgs-healthmond.txt)", type=['txt', 'log'])
 
